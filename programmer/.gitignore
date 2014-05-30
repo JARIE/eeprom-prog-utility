@@ -1,0 +1,6 @@
+*.c~
+makefile~
+*.elf
+*.o
+*.hex
+*.h~

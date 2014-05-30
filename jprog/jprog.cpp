@@ -77,16 +77,16 @@ int main(int argc, char ** argv) {
         FILE *hexfile_handle;
         char *hexfile_name;
 
-        char bytecount_literal[3], data_literal[3], address_literal[5], record_literal[5],
-                checksum_literal[3];
-        uint8_t bytecount, data[16], checksum;
+        char bytecount_literal[3], data_literal[3], address_literal[5],
+                record_literal[5], checksum_literal[3];
+        uint8_t bytecount, data[20], checksum, data_nbytes;
         uint16_t address;
 
         enum record_type_t {END_OF_FILE = 0, DATA} record_type;
 
         enum program_status_t {STOP_PARSE = 0, PARSE_HEXFILE} program_status;
 
-        uint8_t start_code = 0xA5, acknowledge_byte;
+        uint8_t control_byte = 0xC0, acknowledge_byte = 0;
 
         uint8_t tx_buffer[50], rx_buffer[50];
 
@@ -179,6 +179,13 @@ int main(int argc, char ** argv) {
                 EFAILURE;
 	}
 
+        /* Set the read and write timeouts. */
+        ft_status = FT_SetTimeouts(ft_handle, 5000, 1000);
+        if(ft_status != FT_OK) {
+                STDERR("read and write timeouts could not be set\n");
+                EFAILURE;
+        }
+
 // development area start
 
         program_status = PARSE_HEXFILE;
@@ -240,7 +247,12 @@ int main(int argc, char ** argv) {
                                 c = fgetc(hexfile_handle);
                         } while(c != '\n');
 
-                        ft_status = FT_Write(ft_handle, &start_code, 1, &n_bytes);
+                        data_nbytes = bytecount + 2;
+                        control_byte = data_nbytes | 0xC0; 
+                        printf("control byte %#x", control_byte);
+
+
+                        ft_status = FT_Write(ft_handle, &control_byte, 1, &n_bytes);
                         if(ft_status != FT_OK) {
                                 STDERR("data write failed\n");
                                 file_status = fclose(hexfile_handle);
@@ -248,19 +260,24 @@ int main(int argc, char ** argv) {
                                 EFAILURE;
                         }
 
-                        printf("start code %#x sent\n", start_code);
-                        
-#ifdef FT_READ_READY                        
+			
+
+#define FT_READ_READY                        
+#ifdef FT_READ_READY                   
+			acknowledge_byte = 0;
+
                         ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
+			printf("%d\n", acknowledge_byte);
+			
                         if(ft_status != FT_OK) {
                                 STDERR("data read failed\n");
-                                file_status = fclse(hexfile_handle);
+                                file_status = fclose(hexfile_handle);
                                 ft_status = FT_Close(ft_handle);
                                 EFAILURE;
                         }
                         else if(acknowledge_byte != 0xFE) {
                                 STDERR("invalid acknowledge byte received\n");
-                                file_status = fclse(hexfile_handle);
+                                file_status = fclose(hexfile_handle);
                                 ft_status = FT_Close(ft_handle);
                                 EFAILURE;
                         }
@@ -268,12 +285,11 @@ int main(int argc, char ** argv) {
                         
                         tx_buffer[0] = (uint8_t) address;
                         tx_buffer[1] = (uint8_t) (address >> 8);
-                        tx_buffer[2] = bytecount;
 
-                        for(index = 3, i = 0; i < bytecount; ++index, ++i)
+                        for(index = 2, i = 0; i < bytecount; ++index, ++i)
                                 tx_buffer[index] = data[i];
 
-                        ft_status = FT_Write(ft_handle, tx_buffer, (bytecount + 3),
+                        ft_status = FT_Write(ft_handle, tx_buffer, (bytecount + 2),
                                              &n_bytes);
                         if(ft_status != FT_OK) {
                                 STDERR("data write failed\n");
@@ -282,22 +298,24 @@ int main(int argc, char ** argv) {
                                 EFAILURE;                                
                         }
 
-			printf("tx buffer sent\n");
-			for(index = 0; index < (bytecount + 3); ++index)
-				printf("%#x ", tx_buffer[index]);
-			printf("\n");
+                        printf("byte count is %d\n", (bytecount + 2));
 
 #ifdef FT_READ_READY
+			acknowledge_byte = 0;
+
                         ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
+			printf("%d\n", acknowledge_byte);
+
                         if(ft_status != FT_OK) {
                                 STDERR("data read failed\n");
-                                file_status = fclse(hexfile_handle);
+                                file_status = fclose(hexfile_handle);
                                 ft_status = FT_Close(ft_handle);
                                 EFAILURE;
                         }
                         else if(acknowledge_byte != 0xFE) {
-                                STDERR("invalid acknowledge byte received\n");
-                                file_status = fclse(hexfile_handle);
+                                STDERR("invalid acknowledge byte (%d) received\n",
+                                       acknowledge_byte);
+                                file_status = fclose(hexfile_handle);
                                 ft_status = FT_Close(ft_handle);
                                 EFAILURE;
                         }

@@ -6,19 +6,26 @@
 #include <util/atomic.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
+#include "shiftreg.h"
+#include "mem.h"
 
 volatile enum data_status_t {NO_DATA = 0, NEW_DATA} data_status;
 volatile uint8_t rx_value, tx_value;
 
 int main(void) {
         enum expect_status_t {CONTROL_BYTE = 0, DATA_PACKET} expect_status;
-        enum program_status_t {RECEIVING = 0, SENDING} program_status;
-        uint8_t rx_buffer[30], data[16];
+        uint8_t rx_buffer[30];
         uint8_t index, lval, data_nbytes;
+        uint16_t address;
         
         data_status = NO_DATA;
         expect_status = CONTROL_BYTE;
         program_status = RECEIVING;
+
+
+        //mighit remove shiftreg_init() and move all statements into meminit()
+        shiftreg_init();
+        mem_init();
         
         // disable power reduction to USART module
         PRR &= ~(1 << PRUSART0);
@@ -46,36 +53,36 @@ int main(void) {
         sei();
 
         while(1) {
-                if(program_status == RECEIVING) {
-                        ATOMIC_BLOCK(ATOMIC_FORCEON) {
-                        if(data_status == NEW_DATA) {
-                                if(expect_status == CONTROL_BYTE) {
-                                        lval = rx_value & 0xC0;
-                                        if(lval == 0xC0) {
-                                                data_nbytes = rx_value & 0x3F;
-                                                expect_status = DATA_PACKET;
-                                                index = 0;
-                                                tx_value = 0xFE;
-                                                UCSR0B |= 1 << UDRIE0;
-                                        }
+                if(data_status == NEW_DATA) {
+                        if(expect_status == CONTROL_BYTE) {
+                                if((rx_value & 0xC0) == 0xC0) {
+                                        data_nbytes = rx_value & 0x3F;
+                                        expect_status = DATA_PACKET;
+                                        index = 0;
+                                        tx_value = 0xFE;
+                                        UCSR0B |= 1 << UDRIE0;
                                 }
-                                else { //expect_status == DATA_PACKET
-                                        if(index < data_nbytes) {
-                                                rx_buffer[index++] = rx_value;
-                                                if(index == data_nbytes) {
-                                                        expect_status = CONTROL_BYTE;
-                                                        tx_value = 0xFE;
-                                                        UCSR0B |= 1 << UDRIE0;
-                                                }
-                                                
-                                        }
+                        }
+                        else { //expect_status == DATA_PACKET
+                                if(index < data_nbytes) 
+                                        rx_buffer[index++] = rx_value;
+
+                                if(index == data_nbytes) {
+                                        expect_status = CONTROL_BYTE;
                                         
+                                        address = rx_buffer[1];
+                                        address = address << 8;
+                                        address |= rx_buffer[0];
+
+                                        shift_16bits(address);
+                                        
+                                        tx_value = 0xFE;
+                                        UCSR0B |= 1 << UDRIE0;
                                 }
-                                data_status = NO_DATA;
+                                        
                         }
-                        }
-                }       
-                
+                        data_status = NO_DATA;
+                }
         }
         
         return 0;
@@ -90,3 +97,4 @@ ISR(USART_UDRE_vect) {
         UDR0 = tx_value;
         UCSR0B &= ~(1 << UDRIE0);
 }
+

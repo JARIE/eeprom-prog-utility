@@ -19,44 +19,9 @@
 #include <stdint.h>
 #include <Windows.h>
 #include <ftd2xx.h>
-
-#define STDERR(str, ...) fprintf(stderr, "error: " str, ##__VA_ARGS__)
-#define EFAILURE exit(EXIT_FAILURE);
-#define ESUCCESS exit(EXIT_SUCCESS);
-
-uint8_t hexliteral_to8bitnum(char *hexvalue_literal) {
-        int index;
-        uint8_t value = 0, multiplicand = 0, exponent = 0;
-        
-        for(index = 1; index >= 0; --index) {
-                if(hexvalue_literal[index] >= 'A' &&
-                   hexvalue_literal[index] <= 'F')
-                        multiplicand = hexvalue_literal[index] - 55;
-                else
-                        multiplicand = hexvalue_literal[index] - 48;
-
-                value += multiplicand * pow(16, exponent++);
-        }
-
-        return value;
-}
-
-uint16_t hexliteral_to16bitnum(char *hexvalue_literal) {
-        int index;
-        uint8_t value = 0, multiplicand = 0, exponent = 0;
-
-        for(index = 3; index >= 0; --index) {
-                if(hexvalue_literal[index] >= 'A' &&
-                   hexvalue_literal[index] <= 'F')
-                        multiplicand = hexvalue_literal[index] - 55;
-                else
-                        multiplicand = hexvalue_literal[index] - 48;
-
-                value += multiplicand * pow(16, exponent++);
-        }
-
-        return value;
-}
+#include "conversion.h"
+#include "parse.h"
+#include "defines.h"
 
 int main(int argc, char ** argv) {
 	FT_STATUS ft_status;
@@ -65,59 +30,87 @@ int main(int argc, char ** argv) {
 	DWORD num_of_devs;
         DWORD baud = 125000;
 	enum status_t {NOT_FOUND = 0, FOUND} device_endpoint;
-	device_endpoint = NOT_FOUND;
-
 	DWORD n_bytes;
-	char user_input[1];
-	char message[10];
-	enum {EXIT = 0, RUN} user_status;
-	user_status = RUN;
-
-        int file_status, c, index, i;
+        int file_status;
         FILE *hexfile_handle;
         char *hexfile_name;
-
-        char bytecount_literal[3], data_literal[3], address_literal[5],
-                record_literal[5], checksum_literal[3];
-        uint8_t bytecount, data[20], checksum, data_nbytes;
-        uint16_t address;
-
-        enum record_type_t {END_OF_FILE = 0, DATA} record_type;
-
-        enum program_status_t {STOP_PARSE = 0, PARSE_HEXFILE} program_status;
-
         uint8_t control_byte = 0xC0, acknowledge_byte = 0;
-
         uint8_t tx_buffer[50], rx_buffer[50];
+	binval_parameters_t *binval_list;
+	uint16_t binval_list_size;
+        validity_status_t validity_status;
+        enum command_status_t {PEEK = 0} command_status;
+	char *command_specified, *argument_specified;
+	uint16_t start_memval, end_memval;
 
-        /* Make sure that the right number of arguments are specified. */
-        if(argc > 2) {
-                STDERR("invalid number of arguments specified\n");
-        }
-        else if(argc < 2) {
-                STDERR("no hex file specified\n");
-        }
+        device_endpoint = NOT_FOUND;
 
-        if(argc > 2 || argc < 2) {
-                fprintf(stdout, "\nusage: jprog [file]\n");
+        if(argc == 1) {
+                STDERR("no command/option specified\n");
+                EFAILURE;
+        }
+        else if(argc == 2) {
+                command_specified = argv[1];
+                if(!strcmp(command_specified, "help")) {
+                        STDOUT("usage: jprog [command] [argument]\n\n");
+                        ESUCCESS;
+                }
+                else if(!strcmp(command_specified, "erase")) {
+                        STDERR("memory area to erase has not been specified\n");
+                        EFAILURE;
+                }
+                else if(!strcmp(command_specified, "peek")) {
+                        STDERR("no memory location specified\n");
+                        EFAILURE;
+                }
+                else if(!strcmp(command_specified, "port")) {
+                        STDERR("no hex file specified\n");
+                        EFAILURE;
+                }
+                else {
+                        STDERR("invalid command\n");
+                        EFAILURE;
+                }
+        }
+        else if(argc == 3) {
+                command_specified = argv[1];
+                argument_specified = argv[2];
+                if(!strcmp(command_specified, "help")) {
+                        STDERR("too many arguments specified\n");
+                        EFAILURE;
+                }
+                else if(!strcmp(command_specified, "erase")) {
+                        DEBUG("erasing; command not complete\n");
+                        ESUCCESS;
+                }
+                else if(!strcmp(command_specified, "peek")) {
+                        validity_status =
+                                parsevalidity_peekarg(argument_specified,
+                                                      &start_memval,
+                                                      &end_memval);
+                        if(validity_status == INVALID) {
+                                STDERR("invalid memory location specified\n");
+                                EFAILURE;
+                        }
+                        else {
+                                command_status = PEEK;
+                        }
+                        
+                }
+                else if(!strcmp(command_specified, "port")) {
+                        DEBUG("porting; command not complete\n");
+                        ESUCCESS;
+                }
+                else {
+                        STDERR("invalid command\n");
+                        EFAILURE;
+                }
+        }
+        else {
+                STDERR("too many arguments specified\n");
                 EFAILURE;
         }
 
-        /* Determine if the file specified is in the correct format. In this case, the
-           file format must be a hex file. */
-        if(strstr(argv[1], ".hex") == NULL) {
-                STDERR("the specified file is not a hex file\n");
-                EFAILURE;
-        }
-        else 
-                hexfile_name = argv[1];
-
-        /* Open the file for reading only. */
-        hexfile_handle = fopen(hexfile_name, "r");
-        if(hexfile_handle == NULL) {
-                STDERR("the file \"%s\" could not be opened\n", hexfile_name);
-                EFAILURE;
-        }
 
         /* Get the number of D2XX devices connected, and created a info list about the
            devices. */
@@ -186,159 +179,17 @@ int main(int argc, char ** argv) {
                 EFAILURE;
         }
 
-// development area start
 
-        program_status = PARSE_HEXFILE;
+	//parse_hexfile(hexfile_handle, &binval_list, &binval_list_size);
         
-        while(program_status == PARSE_HEXFILE) {
-                c = fgetc(hexfile_handle);
-                if(c != ':') {
-                        STDERR("no start code found in \"%s\"\n", hexfile_name);
-                        file_status = fclose(hexfile_handle);
-                        ft_status = FT_Close(ft_handle);
-                        EFAILURE;
-                }
-
-                for(index = 0; index < 2; ++index) {
-                        c = fgetc(hexfile_handle);
-                        bytecount_literal[index] = c;
-                }
-                bytecount_literal[index] = '\0';
-
-                for(index = 0; index < 4; ++index) {
-                        c = fgetc(hexfile_handle);
-                        address_literal[index] = c;
-                }
-                address_literal[index] = '\0';
-
-                for(index = 0; index < 2; ++index) {
-                        c = fgetc(hexfile_handle);
-                        record_literal[index] = c;
-                }
-                record_literal[index] = '\0';
-
-                if(!strcmp(record_literal, "00"))
-                        record_type = DATA;
-                else
-                        record_type = END_OF_FILE;
-
-                if(record_type == DATA) {
-                        bytecount = hexliteral_to8bitnum(bytecount_literal);
-                        address = hexliteral_to16bitnum(address_literal);
-
-                        for(index = 0; index < bytecount; ++index) {
-                                for(i = 0; i < 2; ++i) {
-                                        c = fgetc(hexfile_handle);
-                                        data_literal[i] = c;
-                                }
-                                data_literal[i] = '\0';
-                                data[index] = hexliteral_to8bitnum(data_literal);
-                        }
-
-                        for(index = 0; index < 2; ++index) {
-                                c = fgetc(hexfile_handle);
-                                checksum_literal[index] = c;
-                        }
-                        checksum_literal[index] = '\0';
-
-                        checksum = hexliteral_to8bitnum(checksum_literal);
-
-                        do {
-                                c = fgetc(hexfile_handle);
-                        } while(c != '\n');
-
-                        data_nbytes = bytecount + 2;
-                        control_byte = data_nbytes | 0xC0; 
-                        printf("control byte %#x", control_byte);
+	switch(command_status) {
+	case PEEK:
+                retrieve_memvals(ft_handle, start_memval, end_memval);
+		break;
+	}
 
 
-                        ft_status = FT_Write(ft_handle, &control_byte, 1, &n_bytes);
-                        if(ft_status != FT_OK) {
-                                STDERR("data write failed\n");
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;
-                        }
-
-			
-
-#define FT_READ_READY                        
-#ifdef FT_READ_READY                   
-			acknowledge_byte = 0;
-
-                        ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
-			printf("%d\n", acknowledge_byte);
-			
-                        if(ft_status != FT_OK) {
-                                STDERR("data read failed\n");
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;
-                        }
-                        else if(acknowledge_byte != 0xFE) {
-                                STDERR("invalid acknowledge byte received\n");
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;
-                        }
-#endif
-                        
-                        tx_buffer[0] = (uint8_t) address;
-                        tx_buffer[1] = (uint8_t) (address >> 8);
-
-                        for(index = 2, i = 0; i < bytecount; ++index, ++i)
-                                tx_buffer[index] = data[i];
-
-                        ft_status = FT_Write(ft_handle, tx_buffer, (bytecount + 2),
-                                             &n_bytes);
-                        if(ft_status != FT_OK) {
-                                STDERR("data write failed\n");
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;                                
-                        }
-
-                        printf("byte count is %d\n", (bytecount + 2));
-
-#ifdef FT_READ_READY
-			acknowledge_byte = 0;
-
-                        ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
-			printf("%d\n", acknowledge_byte);
-
-                        if(ft_status != FT_OK) {
-                                STDERR("data read failed\n");
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;
-                        }
-                        else if(acknowledge_byte != 0xFE) {
-                                STDERR("invalid acknowledge byte (%d) received\n",
-                                       acknowledge_byte);
-                                file_status = fclose(hexfile_handle);
-                                ft_status = FT_Close(ft_handle);
-                                EFAILURE;
-                        }
-#endif                        
-
-                        
-                        
-                        program_status = PARSE_HEXFILE;
-                }
-                else {
-                        program_status = STOP_PARSE;
-                }
-        }
         
-
-
-// development area end
-        
-
-        /* Close the file opened and the device communication. */
-        file_status = fclose(hexfile_handle);
-        if(file_status == EOF) 
-                STDERR("the file \"%s\" could could not be closed\n", hexfile_name);
 
 	ft_status = FT_Close(ft_handle);
         if(ft_status != FT_OK)

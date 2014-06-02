@@ -195,8 +195,10 @@ uint16_t numliteral_tonumval(char *val_toconv) {
                 for(; index >= 0; --index) {
                         if(val_toconv[index] >= '0' && val_toconv[index] <= '9')
                                 multiplicand = val_toconv[index] - 48;
-                        else
+                        else if(val_toconv[index] >= 'A' && val_toconv[index] <= 'F')
                                 multiplicand = val_toconv[index] - 55;
+			else
+				multiplicand = val_toconv[index] - 87;
 
                         value += multiplicand * pow(16.0, exponent++);
                 }

@@ -2,8 +2,8 @@
 # Author: Jarielle Catbagan
 # Created: 29, May 2014
 
-build: programmer.o
-	avr-gcc -mmcu=atmega328p -o programmer.elf programmer.o
+build: programmer.o shiftreg.o mem.o sst.o
+	avr-gcc -mmcu=atmega328p -o programmer.elf programmer.o shiftreg.o mem.o sst.o
 	avr-objcopy -j .text -j .data -O ihex programmer.elf programmer.hex
 programmer.o: programmer.c
 	avr-gcc -Os -mmcu=atmega328p -std=c99 -c programmer.c

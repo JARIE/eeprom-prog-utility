@@ -10,21 +10,17 @@
 #include "mem.h"
 
 volatile enum data_status_t {NO_DATA = 0, NEW_DATA} data_status;
-volatile uint8_t rx_value, tx_value;
+volatile uint8_t rx_buffer[3], tx_buffer[2], tx_value;
+volatile uint8_t rx_index, tx_index;
 
 int main(void) {
-        enum expect_status_t {CONTROL_BYTE = 0, DATA_PACKET} expect_status;
-        uint8_t rx_buffer[30];
         uint8_t index, lval, data_nbytes;
         uint16_t address;
-        
+
+        rx_index = 0;
+        tx_index = 0;
         data_status = NO_DATA;
-        expect_status = CONTROL_BYTE;
-        program_status = RECEIVING;
 
-
-        //mighit remove shiftreg_init() and move all statements into meminit()
-        shiftreg_init();
         mem_init();
         
         // disable power reduction to USART module
@@ -54,32 +50,14 @@ int main(void) {
 
         while(1) {
                 if(data_status == NEW_DATA) {
-                        if(expect_status == CONTROL_BYTE) {
-                                if((rx_value & 0xC0) == 0xC0) {
-                                        data_nbytes = rx_value & 0x3F;
-                                        expect_status = DATA_PACKET;
-                                        index = 0;
-                                        tx_value = 0xFE;
-                                        UCSR0B |= 1 << UDRIE0;
-                                }
-                        }
-                        else { //expect_status == DATA_PACKET
-                                if(index < data_nbytes) 
-                                        rx_buffer[index++] = rx_value;
-
-                                if(index == data_nbytes) {
-                                        expect_status = CONTROL_BYTE;
-                                        
-                                        address = rx_buffer[1];
-                                        address = address << 8;
-                                        address |= rx_buffer[0];
-
-                                        shift_16bits(address);
-                                        
-                                        tx_value = 0xFE;
-                                        UCSR0B |= 1 << UDRIE0;
-                                }
-                                        
+                        if(rx_buffer[0] == 0xA5) {
+                                address = rx_buffer[2];
+                                address = address << 8;
+                                address |= rx_buffer[1];
+                                shift_16bits(address);
+                                tx_buffer[0] = 0xFE;
+                                tx_buffer[1] = mem_read(address);
+                                UCSR0B |= 1 << UDRIE0;
                         }
                         data_status = NO_DATA;
                 }
@@ -89,12 +67,21 @@ int main(void) {
 }
 
 ISR(USART_RX_vect) {
-        data_status = NEW_DATA;
-        rx_value = UDR0;
+        rx_buffer[rx_index] = UDR0;
+        ++rx_index;
+        if(rx_index == 3) {
+                rx_index = 0;
+                data_status = NEW_DATA;
+        }
 }
 
 ISR(USART_UDRE_vect) {
-        UDR0 = tx_value;
-        UCSR0B &= ~(1 << UDRIE0);
+        UDR0 = tx_buffer[tx_index];
+        ++tx_index;
+        if(tx_index == 2) {
+                tx_index = 0;
+                data_status = NO_DATA;
+                UCSR0B &= ~(1 << UDRIE0);
+        }
 }
 

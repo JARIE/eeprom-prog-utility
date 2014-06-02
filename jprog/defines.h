@@ -2,6 +2,8 @@
 // Author: Jarielle Catbagan
 // Created: 30, May 2014
 
+#include <stdio.h>
+
 #ifndef DEFINES_H
 #define DEFINES_H
 

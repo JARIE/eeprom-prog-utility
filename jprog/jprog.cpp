@@ -22,6 +22,7 @@
 #include "conversion.h"
 #include "parse.h"
 #include "defines.h"
+#include "task.h"
 
 int main(int argc, char ** argv) {
 	FT_STATUS ft_status;
@@ -91,7 +92,7 @@ int main(int argc, char ** argv) {
                         if(validity_status == INVALID) {
                                 STDERR("invalid memory location specified\n");
                                 EFAILURE;
-                        }
+                        } 
                         else {
                                 command_status = PEEK;
                         }

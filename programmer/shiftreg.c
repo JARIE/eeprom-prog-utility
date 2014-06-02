@@ -46,7 +46,7 @@ void shift_16bits(uint16_t value) {
         SR_PORT &= ~(1 << SR_CLEAR);
         SR_PORT |= 1 << SR_CLEAR;
 
-        for(i = 0; i < 15; ++i) {
+        for(i = 0; i < 16; ++i) {
                 lval = value & bitmask;
                 if(lval == bitmask) {
                         SR_PORT |= 1 << SR_DATA;

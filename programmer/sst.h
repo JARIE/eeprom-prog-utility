@@ -5,8 +5,8 @@
 #ifndef SST_H
 #define SST_H
 
-#define SST_CTRL_WE PIND5
-#define SST_CTRL_OE PIND6
+#define SST_CTRL_WE PIND2
+#define SST_CTRL_OE PIND3
 #define SST_CTRL_PORT1 PORTD
 #define SST_CTRL_DDR1 DDRD
 #define SST_CTRL_CE PINB2

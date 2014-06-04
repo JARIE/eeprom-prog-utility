@@ -36,6 +36,7 @@ void sst_address(uint16_t address) {
 }
 
 void sst_data(uint8_t data) {
+        sst_setdataout();
         /* Since the data port is currently split up into two different ports where
            data bits 5:0 are in pins C5:C0 and data bits 7:6 are in pins B1:B0, the data
            has to be masked and outputed to appropriate location. */
@@ -45,7 +46,7 @@ void sst_data(uint8_t data) {
         /* Mask the data area at interest and output it to the appropriate location. */
         SST_DATA_PORT1 |= (data & 0x3F);
 
-        /* Set B1:B1 to '0' while masking B7:B2. */
+        /* Set B1:B0 to '0' while masking B7:B2. */
         SST_DATA_PORT2 &= 0xFC;
         /* As before, mask the data and output it to the appropriate location. */
         SST_DATA_PORT2 |= (data >> 6) & 0x03;
@@ -85,22 +86,43 @@ void sst_cleardata(void) {
 
 void sst_datapoll(uint8_t val_tocmp) {
         uint8_t lval;
+        enum loop_status_t {EXIT = 0, CONTINUE} loop_status;
 
-        sst_setdatain();
-        
-        do {
-                sst_CElow();
-                sst_OElow();
-                _delay_us(1);
-                /* Obtain the value of the data-poll bit. */
-                lval = SST_DATA_PIN2 & (1 << SST_DATA_D7);
-                sst_CEhigh();
-                _delay_us(1);
-                sst_OEhigh();
-                _delay_us(1);
-        } while(lval != (val_tocmp & 0x80));
+        sst_datapollbit_in();
+        loop_status = CONTINUE;
 
-        sst_setdataout();
+        if(0x80 & val_tocmp) {
+                do {
+                        sst_CElow();
+                        _delay_us(1);
+                        sst_OElow();
+                        _delay_us(1);
+                        if(bit_is_set(PINB, 1))
+                                loop_status = EXIT;
+                        _delay_us(5);
+                        sst_OEhigh();
+                        _delay_us(1);
+                        sst_CEhigh();
+                        _delay_us(1);
+                } while(loop_status == CONTINUE);
+        }
+        else {
+                do {
+                        sst_CElow();
+                        _delay_us(1);
+                        sst_OElow();
+                        _delay_us(1);
+                        if(bit_is_clear(PINB, 1))
+                                loop_status = EXIT;
+                        _delay_us(5);
+                        sst_OEhigh();
+                        _delay_us(1);
+                        sst_CEhigh();
+                        _delay_us(1);
+                } while (loop_status == CONTINUE);
+        }
+
+        sst_datapollbit_out();
 }
 
 void sst_setdatain(void) {
@@ -125,4 +147,39 @@ void sst_setdataout(void) {
         SST_DATA_PORT1 &= ~(1 << SST_DATA_D0 | 1 << SST_DATA_D1 | 1 << SST_DATA_D2 |
                             1 << SST_DATA_D3 | 1 << SST_DATA_D4 | 1 << SST_DATA_D5);
         SST_DATA_PORT2 &= ~(1 << SST_DATA_D6 | 1 << SST_DATA_D7);
+}
+
+void sst_datapollbit_in(void) {
+        SST_DATA_DDR2 &= ~(1 << SST_DATA_D7);
+        SST_DATA_PORT2 &= ~(1 << SST_DATA_D7);
+}
+
+void sst_datapollbit_out(void) {
+        SST_DATA_DDR2 |= 1 << SST_DATA_D7;
+        SST_DATA_PORT2 &= ~(1 << SST_DATA_D7);
+}
+
+void sst_wait(uint16_t address, uint8_t data) {
+        uint8_t lval;
+        sst_setdatain();
+
+        sst_address(address);
+                
+        do {
+                sst_WEhigh();
+                sst_CElow();
+                _delay_us(1);
+                sst_OElow();
+                _delay_us(1);
+
+                lval = SST_DATA_PIN1;
+                lval &= 0x3F;
+                lval |= (SST_DATA_PIN2 << 6) & 0xC0;
+
+                _delay_us(5);
+                sst_OEhigh();
+                sst_CEhigh();
+        } while(lval != data);
+        
+        sst_setdataout();
 }

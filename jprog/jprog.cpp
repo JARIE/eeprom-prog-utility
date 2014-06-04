@@ -40,7 +40,7 @@ int main(int argc, char ** argv) {
 	binval_parameters_t *binval_list;
 	uint16_t binval_list_size;
         validity_status_t validity_status;
-        enum command_status_t {PEEK = 0} command_status;
+        enum command_status_t {PEEK = 0, PORT, ERASE_MEM} command_status;
 	char *command_specified, *argument_specified;
 	uint16_t start_memval, end_memval;
 
@@ -81,8 +81,7 @@ int main(int argc, char ** argv) {
                         EFAILURE;
                 }
                 else if(!strcmp(command_specified, "erase")) {
-                        DEBUG("erasing; command not complete\n");
-                        ESUCCESS;
+			command_status = ERASE_MEM;
                 }
                 else if(!strcmp(command_specified, "peek")) {
                         validity_status =
@@ -99,8 +98,18 @@ int main(int argc, char ** argv) {
                         
                 }
                 else if(!strcmp(command_specified, "port")) {
-                        DEBUG("porting; command not complete\n");
-                        ESUCCESS;
+                        if(strstr(argument_specified, ".hex") == NULL) {
+                                STDERR("the specified file is not a hex file\n");
+                                EFAILURE;
+                        }
+                     
+                        command_status = PORT;
+                        hexfile_name = argument_specified;
+			hexfile_handle = fopen(hexfile_name, "r");
+			if(hexfile_handle == NULL) {
+				STDERR("the specified hex file could not be opened\n");
+				EFAILURE;
+			}
                 }
                 else {
                         STDERR("invalid command\n");
@@ -179,18 +188,25 @@ int main(int argc, char ** argv) {
                 STDERR("read and write timeouts could not be set\n");
                 EFAILURE;
         }
-
-
-	//parse_hexfile(hexfile_handle, &binval_list, &binval_list_size);
         
 	switch(command_status) {
 	case PEEK:
                 retrieve_memvals(ft_handle, start_memval, end_memval);
 		break;
+	case PORT:
+		parse_hexfile(hexfile_handle, &binval_list, &binval_list_size);
+		program_datavals(ft_handle, binval_list, binval_list_size);
+		break;
+	case ERASE_MEM:
+		erase_memvals(ft_handle);
+		break;
 	}
 
-
-        
+	if(command_status == PORT) {
+		file_status = fclose(hexfile_handle);
+		if(file_status == EOF) 
+			STDERR("the hexfile could not be closed\n");
+	}
 
 	ft_status = FT_Close(ft_handle);
         if(ft_status != FT_OK)

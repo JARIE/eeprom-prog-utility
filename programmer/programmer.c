@@ -9,16 +9,23 @@
 #include "shiftreg.h"
 #include "mem.h"
 
+#define READ 0xA5
+#define WRITE 0x8C
+#define ERASE 0xE3
+
 volatile enum data_status_t {NO_DATA = 0, NEW_DATA} data_status;
-volatile uint8_t rx_buffer[3], tx_buffer[2], tx_value;
-volatile uint8_t rx_index, tx_index;
+volatile uint8_t rx_buffer[4], tx_buffer[2];
+volatile uint8_t rx_index, tx_index, rx_buffer_size, tx_buffer_size;
 
 int main(void) {
         uint8_t index, lval, data_nbytes;
         uint16_t address;
+        uint8_t data;
 
         rx_index = 0;
+        rx_buffer_size = 0;
         tx_index = 0;
+        tx_buffer_size = 0;
         data_status = NO_DATA;
 
         mem_init();
@@ -50,13 +57,30 @@ int main(void) {
 
         while(1) {
                 if(data_status == NEW_DATA) {
-                        if(rx_buffer[0] == 0xA5) {
+                        if(rx_buffer[0] == READ) {
                                 address = rx_buffer[2];
                                 address = address << 8;
                                 address |= rx_buffer[1];
-                                shift_16bits(address);
                                 tx_buffer[0] = 0xFE;
                                 tx_buffer[1] = mem_read(address);
+                                tx_buffer_size = 2;
+                                UCSR0B |= 1 << UDRIE0;
+                        }
+                        else if(rx_buffer[0] == WRITE) {
+                                address = rx_buffer[2];
+                                address = address << 8;
+                                address |= rx_buffer[1];
+                                data = rx_buffer[3];
+                                mem_write(address, data);
+                                tx_buffer[0] = 0xFE;
+                                tx_buffer_size = 1;
+                                UCSR0B |= 1 << UDRIE0;
+                                
+                        }
+                        else if(rx_buffer[0] == ERASE) {
+                                mem_erase();
+                                tx_buffer[0] = 0xFE;
+                                tx_buffer_size = 1;
                                 UCSR0B |= 1 << UDRIE0;
                         }
                         data_status = NO_DATA;
@@ -68,8 +92,18 @@ int main(void) {
 
 ISR(USART_RX_vect) {
         rx_buffer[rx_index] = UDR0;
+
+        if(rx_index == 0) {
+                if(rx_buffer[rx_index] == READ)
+                        rx_buffer_size = 3;
+                else if(rx_buffer[rx_index] == WRITE)
+                        rx_buffer_size = 4;
+                else if(rx_buffer[rx_index] == ERASE)
+                        rx_buffer_size = 1;
+        }
+
         ++rx_index;
-        if(rx_index == 3) {
+        if(rx_index == rx_buffer_size) {
                 rx_index = 0;
                 data_status = NEW_DATA;
         }
@@ -78,7 +112,7 @@ ISR(USART_RX_vect) {
 ISR(USART_UDRE_vect) {
         UDR0 = tx_buffer[tx_index];
         ++tx_index;
-        if(tx_index == 2) {
+        if(tx_index == tx_buffer_size) {
                 tx_index = 0;
                 data_status = NO_DATA;
                 UCSR0B &= ~(1 << UDRIE0);

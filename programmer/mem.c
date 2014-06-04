@@ -15,6 +15,8 @@ void mem_init(void) {
 }
 
 void mem_write(uint16_t address, uint8_t data) {
+        uint8_t lval1, lval2;
+
         sst_setdataout();
         
         sst_OEhigh();
@@ -27,7 +29,7 @@ void mem_write(uint16_t address, uint8_t data) {
         _delay_us(1);
         sst_WEhigh();
 
-        /* Second byte of three-byte write-sequence initializeation. */
+        /* Second byte of three-byte write-sequence initialization. */
         sst_address(0x2AAA);
         sst_data(0x55);
         sst_WElow();
@@ -47,12 +49,13 @@ void mem_write(uint16_t address, uint8_t data) {
         _delay_us(1);
         sst_WEhigh();
 
+        _delay_us(5);
         sst_CEhigh();
         _delay_us(1);
 
         sst_datapoll(data);
-
-        sst_clearaddr();
+                
+        sst_clearaddr(); 
         sst_cleardata();
 }
 
@@ -71,6 +74,10 @@ uint8_t mem_read(uint16_t address) {
         data = SST_DATA_PIN1;
         data &= 0x3F;
         data |= (SST_DATA_PIN2 << 6) & 0xC0;
+
+        _delay_us(5);
+        sst_OEhigh();
+        sst_CEhigh();
 
         return data;
 }
@@ -125,7 +132,8 @@ void mem_erase(void) {
         _delay_us(1);
         sst_WEhigh();
 
-        data = 0x10;
+        _delay_us(5);
+        data = 0x80;
 
         sst_CEhigh();
         _delay_us(1);

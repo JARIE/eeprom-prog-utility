@@ -43,5 +43,8 @@ void sst_cleardata(void);
 void sst_datapoll(uint8_t val_tocmp);
 void sst_setdatain(void);
 void sst_setdataout(void);
+void sst_datapollbit_in(void);
+void sst_datapollbit_out(void);
+void sst_wait(uint16_t address, uint8_t data);
 
 #endif

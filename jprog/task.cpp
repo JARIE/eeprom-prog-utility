@@ -28,6 +28,7 @@ void retrieve_memvals(FT_HANDLE ft_handle, uint16_t start_memval, uint16_t end_m
                 tx_buffer[0] = control_byte;
                 tx_buffer[1] = (uint8_t) address;
                 tx_buffer[2] = (uint8_t) (address >> 8);
+                
                 ft_status = FT_Write(ft_handle, tx_buffer, 3, &n_bytes);
                 if(ft_status != FT_OK) {
                         STDERR("device read failed\n");
@@ -108,3 +109,108 @@ void print_8bitvalue(uint8_t value) {
 	printf("%s", buffer);
 }
 
+void program_datavals(FT_HANDLE ft_handle, binval_parameters_t *binval_list,
+                      uint16_t binval_list_size) {
+        FT_STATUS ft_status;
+        uint8_t tx_buffer[4];
+        uint8_t control_byte, acknowledge_byte, data_byte;
+        DWORD n_bytes;
+	enum validity_status_t {UNKNOWN = 0, INVALID, VALID} memory_status;
+        
+	memory_status = UNKNOWN;
+        control_byte = WRITE;
+        
+        for(int index = 0; index < binval_list_size; ++index) {
+                tx_buffer[0] = control_byte;
+                tx_buffer[1] = (uint8_t) binval_list[index].address;
+                tx_buffer[2] = (uint8_t) (binval_list[index].address >> 8);
+                tx_buffer[3] = binval_list[index].data;
+
+                ft_status = FT_Write(ft_handle, tx_buffer, 4, &n_bytes);
+                if(ft_status != FT_OK) {
+                        STDERR("device write failed\n");
+                        EFAILURE;
+                }
+
+                acknowledge_byte = 0;
+
+                ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
+                if(ft_status != FT_OK) {
+                        STDERR("acknowledge byte was not received\n");
+                        EFAILURE;
+                }
+                else if(acknowledge_byte != 0xFE) {
+                        STDERR("invalid acknowledge byte value received\n");
+			STDERR("%d bytes written\n", n_bytes);
+                        EFAILURE;
+                }
+        }
+
+	control_byte = READ;
+		
+	for(int index = 0; index < binval_list_size; ++index) {
+		tx_buffer[0] = control_byte;
+		tx_buffer[1] = (uint8_t) binval_list[index].address;
+		tx_buffer[2] = (uint8_t) 
+			(binval_list[index].address >> 8);
+
+		ft_status = FT_Write(ft_handle, tx_buffer, 3, &n_bytes);
+		if(ft_status != FT_OK) {
+			STDERR("memory verification failed\n");
+			EFAILURE;
+		}
+
+		acknowledge_byte = 0;
+
+		ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
+		if(ft_status != FT_OK) {
+			STDERR("memory verifcation request was not acknowledged\n");
+			EFAILURE;
+		}
+
+		ft_status = FT_Read(ft_handle, &data_byte, 1, &n_bytes);
+
+		if(ft_status != FT_OK) {
+			STDERR("requesting data for memory verification failed\n");
+			EFAILURE;
+		}
+
+		if(data_byte != binval_list[index].data)
+			memory_status = INVALID;
+	}
+
+	if(memory_status == INVALID) {
+		STDERR("memory programming was not successful\n");
+		EFAILURE;
+	}
+	else 
+		STDOUT("memory verified; %d bytes written\n", binval_list_size);
+}
+
+void erase_memvals(FT_HANDLE ft_handle) {
+	uint8_t tx_buffer[1], acknowledge_byte, control_byte;
+	FT_STATUS ft_status;
+	DWORD n_bytes;
+
+	control_byte = ERASE;
+
+	tx_buffer[0] = control_byte;
+
+	ft_status = FT_Write(ft_handle, tx_buffer, 1, &n_bytes);
+	if(ft_status != FT_OK) {
+		STDERR("device write failed\n");
+		EFAILURE;
+	}
+
+	acknowledge_byte = 0;
+
+	ft_status = FT_Read(ft_handle, &acknowledge_byte, 1, &n_bytes);
+	if(ft_status != FT_OK) {
+		STDERR("device read failed\n");
+		EFAILURE;
+	}
+	else if(acknowledge_byte != 0xFE) {
+		STDERR("invalid acknowledge byte value received\n");
+		EFAILURE;
+	}
+}

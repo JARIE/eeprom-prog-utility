@@ -4,3 +4,4 @@ makefile~
 *.o
 *.hex
 *.h~
+*.cpp~
